@@ -1,14 +1,13 @@
 import os
 import random
 import shutil
-from pathlib import Path
 import numpy as np
 
 # ============================
 # 설정
 # ============================
 SOURCE_DIR = "dataset/train"
-TARGET_DIR = "dataset_10000"
+TARGET_DIR = "dataset_s100"
 IMG_EXTENSION = ".jpg"
 
 TRAIN_RATIO = 0.8
@@ -16,10 +15,10 @@ VAL_RATIO   = 0.1
 TEST_RATIO  = 0.1
 
 MODE = "fixed"      # "fixed" / "all"
-FIXED_NUM = 10000    # train 기준 (fixed 모드)
+FIXED_NUM = 100     # train 기준 (fixed 모드)
 MIN_VAL_TEST = 20   # val/test 최소 샘플
 
-# 클래스 순서 정의 (중요!)
+# 클래스 순서 정의
 CLASS_ORDER = [
     "aluminum_can1", "aluminum_can2", "battery", "fluorescent_lamp",
     "glass_brown", "glass_clear", "glass_green", "paper1", "paper2",
@@ -33,7 +32,7 @@ CLASS_ORDER = [
 ]
 
 # ============================
-# 폴더 생성 함수
+# 폴더 생성
 # ============================
 def make_dirs(target_dir, class_names):
     for split in ["train", "val", "test"]:
@@ -41,7 +40,7 @@ def make_dirs(target_dir, class_names):
             os.makedirs(os.path.join(target_dir, split, cls), exist_ok=True)
 
 # ============================
-# 데이터 split 함수
+# 데이터 split
 # ============================
 def split_dataset(mode="all", fixed_num=5000, min_val_test=20):
     class_files = {}
@@ -55,12 +54,11 @@ def split_dataset(mode="all", fixed_num=5000, min_val_test=20):
     class_names = list(class_files.keys())
     make_dirs(TARGET_DIR, class_names)
 
-    # 클래스별 카운트 저장
     class_counts = []
 
     for cls in CLASS_ORDER:
         if cls not in class_files:
-            print(f"⚠️ 클래스 '{cls}'가 SOURCE_DIR에 없습니다. 0으로 처리합니다.")
+            print(f"⚠️ 클래스 '{cls}' 없음. 0으로 처리.")
             class_counts.append(0)
             continue
 
@@ -68,44 +66,71 @@ def split_dataset(mode="all", fixed_num=5000, min_val_test=20):
         random.shuffle(files)
         total = len(files)
 
+        if total == 0:
+            print(f"⚠️ '{cls}' 클래스에 데이터 없음.")
+            class_counts.append(0)
+            continue
+
+        # ========================================
+        # 🔹 fixed 모드
+        # ========================================
         if mode == "fixed":
-            # train 기준
+            # train 기준 개수 설정
             train_count = min(fixed_num, total)
-            remaining = total - train_count
 
-            # val/test 최소 보장
-            val_count = max(int(total * VAL_RATIO), min_val_test)
-            test_count = max(int(total * TEST_RATIO), min_val_test)
+            # 남은 샘플 중 val/test 개수 계산
+            val_count = int(train_count * (VAL_RATIO / TRAIN_RATIO))
+            test_count = int(train_count * (TEST_RATIO / TRAIN_RATIO))
 
-            # 총합이 total보다 많으면 test→val 순으로 줄이고 train은 남은 샘플
+            # 최소 보장
+            if val_count == 0:
+                val_count = min(min_val_test, total - train_count)
+            if test_count == 0:
+                test_count = min(min_val_test, total - train_count - val_count)
+
+            # 총합 초과 시 조정
             if train_count + val_count + test_count > total:
-                excess = train_count + val_count + test_count - total
-                reduce_test = min(excess, test_count - min_val_test)
-                test_count -= reduce_test
-                excess -= reduce_test
+                overflow = train_count + val_count + test_count - total
+                if test_count > min_val_test:
+                    reduce = min(overflow, test_count - min_val_test)
+                    test_count -= reduce
+                    overflow -= reduce
+                if overflow > 0 and val_count > min_val_test:
+                    reduce = min(overflow, val_count - min_val_test)
+                    val_count -= reduce
+                    overflow -= reduce
+                train_count = total - val_count - test_count
 
-                reduce_val = min(excess, val_count - min_val_test)
-                val_count -= reduce_val
-                excess -= reduce_val
-
-            train_count = total - val_count - test_count
-
-            train_files = files[:train_count]
-            val_files   = files[train_count:train_count+val_count]
-            test_files  = files[train_count+val_count:train_count+val_count+test_count]
-
+        # ========================================
+        # 🔹 all 모드
+        # ========================================
         elif mode == "all":
-            # 기존 all 모드
             train_count = int(total * TRAIN_RATIO)
             val_count   = int(total * VAL_RATIO)
             test_count  = total - train_count - val_count
 
-            train_files = files[:train_count]
-            val_files   = files[train_count:train_count+val_count]
-            test_files  = files[train_count+val_count:]
+            # val/test가 0이면 최소 보장
+            if val_count == 0:
+                val_count = min(min_val_test, total - train_count)
+            if test_count == 0:
+                test_count = min(min_val_test, total - train_count - val_count)
+
+            # 총합이 초과되면 비율 유지하며 조정
+            if train_count + val_count + test_count > total:
+                excess = train_count + val_count + test_count - total
+                train_count -= excess  # train 우선 줄이기
+                if train_count < 0:
+                    train_count = 0
 
         else:
             raise ValueError("mode는 'fixed' 또는 'all'만 가능합니다.")
+
+        # ========================================
+        # 파일 분배 (중복 없이)
+        # ========================================
+        train_files = files[:train_count]
+        val_files   = files[train_count:train_count+val_count]
+        test_files  = files[train_count+val_count:train_count+val_count+test_count]
 
         # 파일 복사
         for f in train_files:
@@ -115,25 +140,22 @@ def split_dataset(mode="all", fixed_num=5000, min_val_test=20):
         for f in test_files:
             shutil.copy(f, os.path.join(TARGET_DIR, "test", cls))
 
-        # train 개수 기록
+        # 로그 출력
+        print(f"✅ {cls:25s} | train={len(train_files):4d} | val={len(val_files):4d} | test={len(test_files):4d}")
         class_counts.append(len(train_files))
 
     # ============================
     # CLASS_COUNTS 배열 로그 출력
     # ============================
     CLASS_COUNTS = np.array(class_counts, dtype=int)
-    print("\n📊 CLASS_COUNTS 배열:")
-    print("CLASS_COUNTS = np.array([")
-    for i, count in enumerate(CLASS_COUNTS):
+    print("\n📊 CLASS_COUNTS = np.array([")
+    for i, c in enumerate(CLASS_COUNTS):
         end = "," if i < len(CLASS_COUNTS)-1 else ""
-        print(f"    {count}{end}")
+        print(f"    {c}{end}")
     print("])\n")
+    print(f"✅ Split 완료 ({mode} 모드, 저장경로: {TARGET_DIR})")
 
-    print("✅ Dataset split 완료!")
-    print(f"mode = {mode}")
-    print(f"결과 저장 위치: {TARGET_DIR}")
     return CLASS_COUNTS
-
 
 # ============================
 # 실행
