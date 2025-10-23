@@ -8,19 +8,19 @@ from tensorflow.keras.preprocessing import image_dataset_from_directory
 from sklearn.metrics import confusion_matrix, classification_report
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import os, math, re
 # -------------------------
 # 1) Config
 # -------------------------
-DATA_DIR = "dataset_10000"
+DATA_DIR = "dataset_2000"
 TRAIN_DIR = os.path.join(DATA_DIR, "train")
 VAL_DIR = os.path.join(DATA_DIR, "val")
 TEST_DIR = os.path.join(DATA_DIR, "test")
 
 IMG_SIZE = (224, 224)
-BATCH_SIZE = 8
-EPOCHS_STAGE1 = 2
-EPOCHS_STAGE2 = 1
+BATCH_SIZE = 16
+EPOCHS_STAGE1 = 16
+EPOCHS_STAGE2 = 10
 FINE_TUNE_FRACTION = 0.25
 SHUFFLE_BUFFER = 256
 PREFETCH_SIZE = 2
@@ -30,6 +30,50 @@ MODEL_SAVE_STAGE1 = "EffNetV2S_stage1_best_nolambda.keras"
 MODEL_SAVE_STAGE2 = "EffNetV2S_stage2_best_nolambda.keras"
 FINAL_MODEL = "EffNetV2S_final_nolambda.keras"
 SEED = 42
+
+
+
+# ============================================================
+# 2️⃣ 한글 파일/폴더 처리 (기존 코드 사용)
+# ============================================================
+def has_korean(text): return bool(re.search(r'[가-힣]', text))
+CUSTOM_MAP = {"_김장현_":"_kimjanghyun_","플라스틱":"plastic","비닐":"vinyl","종이":"paper","유리":"glass","금속":"metal"}
+def safe_name(name, counter):
+    cleaned = re.sub(r'[가-힣]+', '', name)
+    cleaned = re.sub(r'\s+', '_', cleaned)
+    cleaned = re.sub(r'[^a-zA-Z0-9_.-]', '', cleaned)
+    return cleaned if cleaned.strip() else f"korean_file_{counter:03d}"
+def find_korean_dirs(base_path="."):
+    return [os.path.join(root, d) for root, dirs, _ in os.walk(base_path) for d in dirs if has_korean(d)]
+def rename_korean_files(base_path="."):
+    counter, renamed = 1, []
+    for root, dirs, files in os.walk(base_path, topdown=False):
+        for filename in files:
+            old_path = os.path.join(root, filename)
+            new_filename = filename
+            for k, v in CUSTOM_MAP.items():
+                new_filename = new_filename.replace(k, v)
+            if has_korean(new_filename):
+                name, ext = os.path.splitext(new_filename)
+                new_filename = safe_name(name, counter) + ext
+                counter += 1
+            new_path = os.path.join(root, new_filename)
+            if new_path != old_path:
+                os.rename(old_path, new_path)
+                renamed.append((old_path, new_path))
+        for dirname in dirs:
+            old_dir = os.path.join(root, dirname)
+            new_dirname = dirname
+            for k, v in CUSTOM_MAP.items():
+                new_dirname = new_dirname.replace(k, v)
+            if has_korean(new_dirname):
+                new_dirname = safe_name(new_dirname, counter)
+                counter += 1
+            new_dir = os.path.join(root, new_dirname)
+            if new_dir != old_dir:
+                os.rename(old_dir, new_dir)
+                renamed.append((old_dir, new_dir))
+rename_korean_files(DATA_DIR)
 
 # -------------------------
 # 2) Dataset
@@ -172,5 +216,5 @@ model.fit(
 # -------------------------
 # 8) Save final (no Lambda!)
 # -------------------------
-model.save(FINAL_MODEL, include_optimizer=False)
+model.save(FINAL_MODEL, include_optimizer=True)
 print("✅ Saved clean model:", FINAL_MODEL)
