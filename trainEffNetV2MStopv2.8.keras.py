@@ -1,5 +1,6 @@
 import os
 import sys
+import os, math, re
 import tensorflow as tf
 from tensorflow.keras import layers, models
 from tensorflow.keras.preprocessing import image_dataset_from_directory
@@ -17,7 +18,7 @@ print(f"\n🚀 Running training script: {script_name}\n")
 # --------------------------------------------------
 # 2️⃣ 데이터 경로 설정
 # --------------------------------------------------
-DATASET_PATH = "dataset_2000"
+DATASET_PATH = "dataset_20000"
 TRAIN_PATH = os.path.join(DATASET_PATH, "train")
 VAL_PATH = os.path.join(DATASET_PATH, "val")
 TEST_PATH = os.path.join(DATASET_PATH, "test")
@@ -27,6 +28,51 @@ TEST_PATH = os.path.join(DATASET_PATH, "test")
 # --------------------------------------------------
 BATCH_SIZE = 32
 IMG_SIZE = (224, 224)
+
+
+
+# ============================================================
+# 2️⃣ 한글 파일/폴더 처리 (기존 코드 사용)
+# ============================================================
+def has_korean(text): return bool(re.search(r'[가-힣]', text))
+CUSTOM_MAP = {"_김장현_":"_kimjanghyun_","플라스틱":"plastic","비닐":"vinyl","종이":"paper","유리":"glass","금속":"metal"}
+def safe_name(name, counter):
+    cleaned = re.sub(r'[가-힣]+', '', name)
+    cleaned = re.sub(r'\s+', '_', cleaned)
+    cleaned = re.sub(r'[^a-zA-Z0-9_.-]', '', cleaned)
+    return cleaned if cleaned.strip() else f"korean_file_{counter:03d}"
+def find_korean_dirs(base_path="."):
+    return [os.path.join(root, d) for root, dirs, _ in os.walk(base_path) for d in dirs if has_korean(d)]
+def rename_korean_files(base_path="."):
+    counter, renamed = 1, []
+    for root, dirs, files in os.walk(base_path, topdown=False):
+        for filename in files:
+            old_path = os.path.join(root, filename)
+            new_filename = filename
+            for k, v in CUSTOM_MAP.items():
+                new_filename = new_filename.replace(k, v)
+            if has_korean(new_filename):
+                name, ext = os.path.splitext(new_filename)
+                new_filename = safe_name(name, counter) + ext
+                counter += 1
+            new_path = os.path.join(root, new_filename)
+            if new_path != old_path:
+                os.rename(old_path, new_path)
+                renamed.append((old_path, new_path))
+        for dirname in dirs:
+            old_dir = os.path.join(root, dirname)
+            new_dirname = dirname
+            for k, v in CUSTOM_MAP.items():
+                new_dirname = new_dirname.replace(k, v)
+            if has_korean(new_dirname):
+                new_dirname = safe_name(new_dirname, counter)
+                counter += 1
+            new_dir = os.path.join(root, new_dirname)
+            if new_dir != old_dir:
+                os.rename(old_dir, new_dir)
+                renamed.append((old_dir, new_dir))
+rename_korean_files(DATASET_PATH)
+
 
 train_ds = image_dataset_from_directory(
     TRAIN_PATH, image_size=IMG_SIZE, batch_size=BATCH_SIZE, shuffle=True

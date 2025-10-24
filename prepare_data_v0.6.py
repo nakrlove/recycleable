@@ -8,7 +8,7 @@ import numpy as np
 # 설정
 # ============================
 SOURCE_DIR = "dataset/train"
-TARGET_DIR = "dataset_2000"
+TARGET_DIR = "dataset_20000"
 IMG_EXTENSION = ".jpg"
 
 TRAIN_RATIO = 0.8
@@ -16,20 +16,14 @@ VAL_RATIO   = 0.1
 TEST_RATIO  = 0.1
 
 MODE = "fixed"      # "fixed" / "all"
-FIXED_NUM = 10000     # train 기준 (fixed 모드)
+FIXED_NUM = 20000     # train 기준 (fixed 모드)
 MIN_VAL_TEST = 20   # val/test 최소 샘플
 
 # 클래스 순서 정의 (선택적)
 CLASS_ORDER = [
-    "aluminum_can1", "aluminum_can2", "battery", "fluorescent_lamp",
-    "glass_brown", "glass_clear", "glass_green", "paper1", "paper2",
-    "pet_clear_single1", "pet_clear_single2", "pet_clear_single3",
-    "pet_colored_single1", "pet_colored_single2", "pet_colored_single3",
-    "plastic_pe1", "plastic_pe2",
-    "plastic_pp1", "plastic_pp2", "plastic_pp3",
-    "plastic_ps1", "plastic_ps2", "plastic_ps3",
-    "steel_can1", "steel_can2", "steel_can3",
-    "styrofoam1", "styrofoam2", "vinyl"
+    "aluminum_can", "battery", "fluorescent_lamp",
+    "glass", "paper", "pet_single",
+    "plastic","steel_can","styrofoam","vinyl"
 ]
 
 # ============================
