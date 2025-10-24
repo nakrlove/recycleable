@@ -1,163 +1,134 @@
 import os
-import numpy as np
+import sys
 import tensorflow as tf
-from tensorflow.keras import layers, models, optimizers, callbacks, metrics
-from tensorflow.keras.applications import EfficientNetV2S, efficientnet_v2
-from tensorflow.keras.preprocessing import image_dataset_from_directory
-import tensorflow_addons as tfa
+from tensorflow.keras import layers, models
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
+from datetime import datetime
 
-# -------------------------
-# Config
-# -------------------------
-DATA_DIR = "dataset"
-TRAIN_DIR = os.path.join(DATA_DIR, "train")
-VAL_DIR = os.path.join(DATA_DIR, "val")
-TEST_DIR = os.path.join(DATA_DIR, "test")
+# === 현재 실행 중인 파일명 출력 ===
+current_script = os.path.basename(sys.argv[0])
+print(f"\n🚀 실행 파일명: {current_script}\n")
 
-IMG_SIZE = (224, 224)
+# === 데이터 경로 설정 ===
+BASE_DIR = "dataset_2000"
+train_dir = os.path.join(BASE_DIR, "train")
+val_dir = os.path.join(BASE_DIR, "val")
+test_dir = os.path.join(BASE_DIR, "test")
+
+# === 파라미터 설정 ===
 BATCH_SIZE = 32
-EPOCHS_STAGE1 = 20
-EPOCHS_STAGE2 = 15
-FINE_TUNE_FRACTION = 0.5  # Stage2 backbone trainable fraction
-SEED = 42
+IMG_SIZE = (224, 224)
+EPOCHS = 30
 
-LEARNING_RATE_STAGE1 = 1e-3
-LEARNING_RATE_STAGE2 = 1e-4
-
-MODEL_SAVE_STAGE1 = "EffNetV2S_stage1_best.keras"
-MODEL_SAVE_STAGE2 = "EffNetV2S_stage2_best.keras"
-FINAL_MODEL = "EffNetV2S_final.keras"
-
-# -------------------------
-# Dataset
-# -------------------------
-train_ds = image_dataset_from_directory(
-    TRAIN_DIR,
-    image_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    label_mode="categorical",
-    shuffle=True,
-    seed=SEED
-)
-val_ds = image_dataset_from_directory(
-    VAL_DIR,
-    image_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    label_mode="categorical",
-    shuffle=False
-)
-test_ds = image_dataset_from_directory(
-    TEST_DIR,
-    image_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    label_mode="categorical",
-    shuffle=False
-)
-
-class_names = train_ds.class_names
-num_classes = len(class_names)
-
-print("✅ trainEffNetV2MStopv2.8 version ✅")
-# -------------------------
-# Class Weights (imbalance 대응)
-# -------------------------
-class_counts = np.array([len(os.listdir(os.path.join(TRAIN_DIR, c))) for c in class_names])
-total_train = class_counts.sum()
-weights = total_train / (num_classes * np.maximum(class_counts, 1))
-weights = np.clip(weights, None, 20.0)  # 소수 클래스 더 강하게
-class_weight = {i: float(w) for i, w in enumerate(weights)}
-
-# -------------------------
-# Data Augmentation (강화)
-# -------------------------
+# === 데이터 증강 (과적합 방지 + 일반화 향상) ===
 data_augmentation = tf.keras.Sequential([
     layers.RandomFlip("horizontal"),
-    layers.RandomRotation(0.2),
-    layers.RandomZoom(0.2),
-    layers.RandomContrast(0.2),
-    layers.RandomTranslation(0.1, 0.1),
-    layers.RandomBrightness(0.2)
+    layers.RandomRotation(0.25),
+    layers.RandomZoom(0.3),
+    layers.RandomContrast(0.3),
 ], name="data_augmentation")
 
-# -------------------------
-# Prefetch
-# -------------------------
+# === 데이터셋 로드 ===
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    train_dir,
+    image_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    label_mode="int",
+    shuffle=True
+)
+
+val_ds = tf.keras.utils.image_dataset_from_directory(
+    val_dir,
+    image_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    label_mode="int",
+    shuffle=False
+)
+
+test_ds = tf.keras.utils.image_dataset_from_directory(
+    test_dir,
+    image_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    label_mode="int",
+    shuffle=False
+)
+
+# === class_names 자동 저장 (Django에서도 사용 가능) ===
+class_names = train_ds.class_names
+class_names_file = os.path.join(BASE_DIR, "class_names.txt")
+
+with open(class_names_file, "w") as f:
+    for name in class_names:
+        f.write(name + "\n")
+
+print(f"✅ 클래스 목록이 '{class_names_file}' 파일로 저장되었습니다.")
+print(f"클래스 개수: {len(class_names)} → {class_names}\n")
+
+# === 데이터셋 최적화 ===
 AUTOTUNE = tf.data.AUTOTUNE
-train_ds = train_ds.shuffle(1024).prefetch(AUTOTUNE)
-val_ds = val_ds.prefetch(AUTOTUNE)
-test_ds = test_ds.prefetch(AUTOTUNE)
+train_ds = train_ds.map(lambda x, y: (data_augmentation(x, training=True), y))
+train_ds = train_ds.prefetch(buffer_size=AUTOTUNE)
+val_ds = val_ds.prefetch(buffer_size=AUTOTUNE)
+test_ds = test_ds.prefetch(buffer_size=AUTOTUNE)
 
-# -------------------------
-# Build Model
-# -------------------------
-inputs = layers.Input(shape=IMG_SIZE + (3,))
-x = layers.Rescaling(1./255)(inputs)
-x = efficientnet_v2.preprocess_input(x)
-x = data_augmentation(x)
+# === 클래스 가중치 계산 ===
+labels = np.concatenate([y for x, y in train_ds], axis=0)
+class_weights = compute_class_weight(
+    class_weight="balanced",
+    classes=np.unique(labels),
+    y=labels
+)
+class_weights_dict = dict(enumerate(class_weights))
+print("📊 클래스 가중치:", class_weights_dict, "\n")
 
-backbone = EfficientNetV2S(include_top=False, input_shape=IMG_SIZE + (3,), weights="imagenet")
-backbone.trainable = False  # Stage1 frozen
-x = backbone(x, training=False)
+# === EfficientNetV2 기반 모델 구성 ===
+base_model = tf.keras.applications.EfficientNetV2M(
+    include_top=False,
+    input_shape=IMG_SIZE + (3,),
+    weights="imagenet"
+)
+base_model.trainable = False  # 전이학습 (Feature Extractor)
+
+inputs = tf.keras.Input(shape=IMG_SIZE + (3,))
+x = data_augmentation(inputs)
+x = tf.keras.applications.efficientnet_v2.preprocess_input(x)
+x = base_model(x, training=False)
 x = layers.GlobalAveragePooling2D()(x)
-x = layers.Dropout(0.4)(x)
-outputs = layers.Dense(num_classes, activation="softmax")(x)
+x = layers.Dropout(0.3)(x)
+outputs = layers.Dense(len(class_names), activation="softmax")(x)
 
 model = models.Model(inputs, outputs)
 model.compile(
-    optimizer=optimizers.Adam(learning_rate=LEARNING_RATE_STAGE1),
-    loss=tfa.losses.SigmoidFocalCrossEntropy(),
-    metrics=["accuracy", metrics.TopKCategoricalAccuracy(k=3, name="top3")]
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy"]
 )
 
-# -------------------------
-# Stage1 Training
-# -------------------------
-cb_stage1 = [
-    callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True),
-    callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3),
-    callbacks.ModelCheckpoint(MODEL_SAVE_STAGE1, save_best_only=True, monitor="val_loss"),
+# === 콜백 설정 ===
+checkpoint_path = os.path.join("checkpoints", f"EffNetV2M_{datetime.now().strftime('%Y%m%d_%H%M%S')}.h5")
+os.makedirs("checkpoints", exist_ok=True)
+
+callbacks = [
+    EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True),
+    ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=3, min_lr=1e-6),
+    ModelCheckpoint(checkpoint_path, save_best_only=True, monitor="val_loss")
 ]
 
-model.fit(
+# === 모델 학습 ===
+history = model.fit(
     train_ds,
     validation_data=val_ds,
-    epochs=EPOCHS_STAGE1,
-    class_weight=class_weight,
-    callbacks=cb_stage1,
-    verbose=2
+    epochs=EPOCHS,
+    class_weight=class_weights_dict,
+    callbacks=callbacks
 )
 
-# -------------------------
-# Stage2 Fine-tune
-# -------------------------
-model.load_weights(MODEL_SAVE_STAGE1)
-num_layers = len(backbone.layers)
-fine_tune_at = int(num_layers * (1 - FINE_TUNE_FRACTION))
-for i, layer in enumerate(backbone.layers):
-    layer.trainable = (i >= fine_tune_at)
+# === 테스트 평가 ===
+test_loss, test_acc = model.evaluate(test_ds)
+print(f"\n✅ 테스트 정확도: {test_acc * 100:.2f}% | 테스트 손실: {test_loss:.4f}")
 
-model.compile(
-    optimizer=optimizers.Adam(learning_rate=LEARNING_RATE_STAGE2),
-    loss=tfa.losses.SigmoidFocalCrossEntropy(),
-    metrics=["accuracy", metrics.TopKCategoricalAccuracy(k=3, name="top3")]
-)
-
-cb_stage2 = [
-    callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True),
-    callbacks.ModelCheckpoint(MODEL_SAVE_STAGE2, save_best_only=True, monitor="val_loss"),
-]
-
-model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=EPOCHS_STAGE2,
-    class_weight=class_weight,
-    callbacks=cb_stage2,
-    verbose=2
-)
-
-# -------------------------
-# Save final model
-# -------------------------
-model.save(FINAL_MODEL)
-print("✅ Model saved:", FINAL_MODEL)
+# === 모델 저장 ===
+model.save("trained_model_EffNetV2M_v3.0.h5")
+print("\n💾 모델 저장 완료: trained_model_EffNetV2M_v3.0.h5")
