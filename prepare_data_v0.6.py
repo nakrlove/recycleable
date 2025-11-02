@@ -8,7 +8,7 @@ import numpy as np
 # 설정
 # ============================
 SOURCE_DIR = "dataset/train"
-TARGET_DIR = "dataset_20000"
+TARGET_DIR = "dataset_25000"
 IMG_EXTENSION = ".jpg"
 
 TRAIN_RATIO = 0.8
@@ -16,7 +16,7 @@ VAL_RATIO   = 0.1
 TEST_RATIO  = 0.1
 
 MODE = "fixed"      # "fixed" / "all"
-FIXED_NUM = 20000     # train 기준 (fixed 모드)
+FIXED_NUM = 25000     # train 기준 (fixed 모드)
 MIN_VAL_TEST = 20   # val/test 최소 샘플
 
 # 클래스 순서 정의 (선택적)

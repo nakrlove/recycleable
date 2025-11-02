@@ -18,7 +18,7 @@ print(f"\n🚀 Running training script: {script_name}\n")
 # --------------------------------------------------
 # 2️⃣ 데이터 경로 설정
 # --------------------------------------------------
-DATASET_PATH = "dataset_20000"
+DATASET_PATH = "dataset_25000"
 TRAIN_PATH = os.path.join(DATASET_PATH, "train")
 VAL_PATH = os.path.join(DATASET_PATH, "val")
 TEST_PATH = os.path.join(DATASET_PATH, "test")

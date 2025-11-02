@@ -93,32 +93,32 @@ def process_dataset(src_root: Path, dst_root: Path, sizes: list[int]):
             # print(f"[SKIP] 원본 유지: {img_path} (모든 사이즈 리사이즈에 성공하지 못함)")
             pass
 
-    print(f"\n✅ 원본 파일 {deleted_count}개 삭제 완료.")
+    print(f"\n원본 파일 {deleted_count}개 삭제 완료.")
     # ----------------------------------------------------
 
 
 def main():
+    
     parser = argparse.ArgumentParser(description="이미지 데이터셋 일괄 리사이즈 및 원본 삭제")
     parser.add_argument("--src", type=str, required=True, help="원본 데이터셋 폴더 경로")
     parser.add_argument("--dst", type=str, required=True, help="리사이즈된 데이터 저장 폴더")
-
+   
     args = parser.parse_args()
-
     src_root = Path(args.src)
     dst_root = Path(args.dst)
-
+    print(src_root)
     if not src_root.exists():
         raise FileNotFoundError(f"원본 폴더가 없습니다: {src_root}")
 
     # 224, 384 두 가지 사이즈만 처리
     # process_dataset(src_root, dst_root, sizes=[224, 384]) # 384 사이즈를 주석 해제하여 원래 목표대로 처리
     process_dataset(src_root, dst_root, sizes=[224])
-    print("\n✅ 모든 리사이즈 및 삭제 작업 완료!")
+    print("\n모든 리사이즈 및 삭제 작업 완료!")
 
 
 if __name__ == "__main__":
     # main 함수 실행 전에 사용자에게 원본 삭제에 대한 경고를 줍니다.
-    print("🚨 경고: 이 스크립트는 리사이즈 성공 후 원본 파일을 삭제합니다. 데이터를 백업했는지 확인하세요. 🚨")
+    print("경고: 이 스크립트는 리사이즈 성공 후 원본 파일을 삭제합니다. 데이터를 백업했는지 확인하세요.")
     
     # 여기서 잠시 대기하거나 사용자 확인을 받을 수 있지만, 
     # 스크립트의 실행 흐름을 위해 바로 main을 호출합니다.

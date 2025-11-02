@@ -11,7 +11,7 @@ from tensorflow.keras.applications import EfficientNetV2M
 # ============================================================
 # 0. 기본 설정
 # ============================================================
-BASE_DIR = "dataset_sp500"  # 데이터셋 루트
+BASE_DIR = "dataset_25000"  # 데이터셋 루트
 IMG_SIZE = (224, 224)
 BATCH_SIZE = 16
 SEED = 42
@@ -51,6 +51,13 @@ print(f"클래스 개수: {num_classes}")
 # ============================================================
 # 2. 데이터 증강 및 배치 처리
 # ============================================================
+
+# 함수                       /  효과       /  과적합 방지 기여
+# random_flip_left_right(). /  좌우. 반전. /  데이터. 다양화
+# rot90(..., k=random)      /  랜덤 회전   / 데이터 다양화
+# random_brightness()       /  밝기 변화   / 조명 상황 대응
+# random_contrast()         /  대비 변화   / 다양한 이미지 품질 대응
+# shuffle(500)              / 데이터 순서 무작위화  / 배치 편향 방지
 train_balanced_ds = (
     train_ds
     .map(lambda x, y: (tf.image.random_flip_left_right(x), y))
